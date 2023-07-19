@@ -1,35 +1,51 @@
 #!/usr/bin/env python3
-'''A module with tools for request caching and tracking.
-'''
+"""web module
+"""
+from functools import wraps
+from typing import Callable
 import redis
 import requests
-from functools import wraps
 
-redis_store = redis.Redis()
+_redis = redis.Redis()
+_redis.flushdb()
 
 
-def data_cacher(method):
+def count_requests(method: Callable) -> Callable:
+    """count_requests function
+
+    Args:
+        method (Callable): method
+
+    Returns:
+        Callable: wrapper
+    """
     @wraps(method)
-    def invoker(url):
-        redis_store.incr(f'count:{url}')
-        result = redis_store.get(f'result:{url}')
-        if result:
-            return result.decode('utf-8')
-        result = method(url)
-        redis_store.setex(f'result:{url}', 10, result)
-        return result
+    def wrapper(*args, **kwargs):
+        """wrapper function
 
-    return invoker
+        Returns:
+            [type]: wrapper
+        """
+        url = args[0]
+        cached = _redis.get(f"cached:{url}")
+        if cached:
+            return cached.decode("utf-8")
+        response = method(*args, **kwargs)
+        _redis.incr(f"count:{url}")
+        _redis.setex(f"cached:{url}", 10, response)
+        return response
+    return wrapper
 
 
-@data_cacher
+@count_requests
 def get_page(url: str) -> str:
-    response = requests.get(url)
+    """get_page function
+
+    Args:
+        url (str): url
+
+    Returns:
+        str: response
+    """
+    response = requests.get(url, timeout=10)
     return response.text
-
-
-# Example usage
-url = 'http://slowwly.robertomurray.co.uk/delay/1000/url/http://www.example.com'
-content = get_page(url)
-print(content)
-
